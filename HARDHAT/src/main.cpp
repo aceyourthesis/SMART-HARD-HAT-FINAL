@@ -69,6 +69,17 @@ bool locationUpdated = false;
 bool statusUpdated = false;
 bool isActive = false;
 bool imageUploaded = false;
+bool updateComplete = false;
+
+bool loggedId = false;
+bool loggedStatus = false;
+bool loggedLatitude = false;
+bool loggedLongitude = false;
+bool loggedHardHatNumber = false;
+bool gotLogId = false;
+bool loggedTimestamp = false;
+bool logIdIncremented = false;
+bool logsWritten = false;
 
 int servoPulse = 10; // dictates speed of servo movement, higher value lower speed
 
@@ -470,44 +481,168 @@ String logPath(int input, String key) {
   return String(buffer);
 }
 
-
-void writeLogs(int _logId, float _lat, float _long, bool _stat) {
-  
-  firebaseReadInt(fbdoLogId, LOG_ID_PATH, logId);
-  logId++;
-
-  // Writing log ID
-  if (!firebaseWriteInt(fbdoLogId, logPath(_logId, "logId").c_str(), _logId)) {
-    Serial.println("Failed to write logId.");
+void firebaseLogIdNumber (){
+  if (!loggedId){
+    // Writing log ID
+    if (firebaseWriteInt(fbdoLogId, LOG_ID_PATH, logId)) {
+      loggedId = true;
+    } else {
+      Serial.println("Failed to write logId.");
+    }
   }
-
-  // Writing hard hat ID (assuming HARD_HAT_ID is a constant or defined variable)
-  if (!firebaseWriteInt(fbdoHardHatId, logPath(_logId, "hardHatId").c_str(), HARD_HAT_ID)) {
-    Serial.println("Failed to write hardHatId.");
-  }
-
-  // Writing latitude
-  if (!firebaseWriteFloat(fbdoLogLatitude, logPath(_logId, "latitude").c_str(), _lat)) {
-    Serial.println("Failed to write latitude.");
-  }
-
-  // Writing longitude
-  if (!firebaseWriteFloat(fbdoLogLongitude, logPath(_logId, "longitude").c_str(), _long)) {
-    Serial.println("Failed to write longitude.");
-  }
-
-  // Writing status
-  if (!firebaseWriteBool(fbdoLogStatus, logPath(_logId, "status").c_str(), _stat)) {
-    Serial.println("Failed to write status.");
-  }
-
-  // Writing timestamp
-  if (!firebaseWriteTimestamp(fbdoLogTimestamp, logPath(_logId, "timestamp").c_str())) {
-    Serial.println("Failed to write timestamp.");
-  }
-
-  firebaseWriteInt(fbdoLogId, LOG_ID_PATH, logId);
 }
+
+void firebaseLogHardHatNumber(){
+  if(!loggedHardHatNumber){
+    // Writing hard hat ID (assuming HARD_HAT_ID is a constant or defined variable)
+    if (firebaseWriteInt(fbdoHardHatId, logPath(logId, "hardHatId").c_str(), HARD_HAT_ID)) {
+      loggedHardHatNumber = true;
+    } else {
+      Serial.println("Failed to write hardHatId.");
+    }
+  }
+}
+
+void firebaseLogLatitude(){
+  if (!loggedLatitude){
+    if (!firebaseWriteFloat(fbdoLogLatitude, logPath(logId, "latitude").c_str(), newLatitude)) {
+      loggedLatitude = true;
+    } else {
+      Serial.println("Failed to write latitude.");
+    }
+  } 
+}
+
+void firebaseLogLongitude(){
+  if (!loggedLongitude){
+    if (!firebaseWriteFloat(fbdoLogLongitude, logPath(logId, "longitude").c_str(), newLongitude)) {
+      loggedLongitude = true;
+    } else {
+      Serial.println("Failed to write longitude.");
+    }
+  } 
+}
+
+void firebaseLogStatus(){
+  if (!loggedLongitude){
+    if (!firebaseWriteBool(fbdoLogStatus, logPath(logId, "status").c_str(), isActive)) {
+      loggedLongitude = true;
+    } else {
+      Serial.println("Failed to write status.");
+    }
+  } 
+}
+
+void firebaseLogTimestamp(){
+  if (!loggedTimestamp){
+    if (firebaseWriteTimestamp(fbdoLogTimestamp, logPath(logId, "timestamp").c_str())) {
+      loggedTimestamp = true;
+    } else {
+      Serial.println("Failed to write timestamp.");
+    }
+  } 
+}
+
+void getLogId (){
+  if(firebaseReadInt(fbdoLogId, LOG_ID_PATH, logId)){
+    logId++;
+    gotLogId = true;
+  } 
+}
+
+
+void firebaseIncrementLogId(){
+  if (!logIdIncremented){
+    if (firebaseWriteInt(fbdoLogId, LOG_ID_PATH, logId)) {
+      logIdIncremented = true;
+      logsWritten = true;
+    } else {
+      Serial.println("Failed to increment log ID.");
+    }
+  } 
+}
+
+// Reset all logged flags to false
+void resetLoggedFlags() {
+  gotLogId = false;
+  loggedId = false;
+  loggedHardHatNumber = false;
+  loggedLatitude = false;
+  loggedLongitude = false;
+  loggedStatus = false;
+  loggedTimestamp = false;
+  logIdIncremented = false;
+  logsWritten = false;
+
+  Serial.println("All logged flags have been reset to false.");
+}
+
+
+
+
+
+void writeLogs() {
+  // Check if logs have not been written
+  if (!logsWritten) {
+    Serial.println("Logs have not been written yet. Starting the process...");
+
+    // If log ID is not obtained, get it
+    if (!gotLogId) {
+      Serial.println("Log ID not available. Fetching log ID...");
+      getLogId();
+    } else {
+      Serial.println("Log ID obtained. Writing log data to Firebase...");
+      // Write log ID to Firebase
+      firebaseLogIdNumber();
+      Serial.println("Log ID written to Firebase.");
+      // Write hard hat ID to Firebase
+      firebaseLogHardHatNumber();
+      Serial.println("Hard Hat ID written to Firebase.");
+      // Write latitude to Firebase
+      firebaseLogLatitude();
+      Serial.println("Latitude written to Firebase.");
+      // Write longitude to Firebase
+      firebaseLogLongitude();
+      Serial.println("Longitude written to Firebase.");
+      // Write status to Firebase
+      firebaseLogStatus();
+      Serial.println("Status written to Firebase.");
+      // Write timestamp to Firebase
+      firebaseLogTimestamp();
+      Serial.println("Timestamp written to Firebase.");
+    }
+
+    // Check if all logs have been successfully written
+    if (loggedId && loggedHardHatNumber && loggedLatitude && loggedLongitude && loggedStatus && loggedTimestamp) {
+      Serial.println("All log data successfully written to Firebase! Incrementing log ID for the next entry...");
+      logsWritten = true;
+    }
+    // Reset flags
+    if (logsWritten) {
+      Serial.println("Logs written. Resetting flags now");
+      if(updateComplete){
+        resetLoggedFlags();
+      }
+    }
+  } else {
+    Serial.println("Logs are already written. No further action required.");
+  }
+}
+
+void resetUpdateFlags(){
+  Serial.println("\n\n_____________________________________________________\n\nAll tasks completed successfully. Resetting flags...\n_____________________________________________________\n\n");
+  statusUpdated = false;
+  cameraDeployed = false;
+  cameraDeployedFirebase = false;
+  locationObtained = false;
+  locationUpdated = false;
+  imageUploaded = false;
+  cameraRetracted = false;
+  syncStarted = false;
+  updatedOnce = true;
+  Serial.println("Flags reset complete.");
+}
+
 
 
 void setup() {
@@ -530,7 +665,7 @@ void loop() {
     
     checkWifi(); //check if connected to wifi network, if not automatically reconnect.
 
-    /*
+    
     if (!syncStarted){
         isActive = isWorn(capacitiveThreshold); // check if hardhat is worn using capacitive touch sensor
         if (isActive){
@@ -598,18 +733,16 @@ void loop() {
                 }
             }
 
-            if (cameraDeployed && cameraDeployedFirebase && locationObtained && locationUpdated && cameraRetracted && statusUpdated && imageUploaded) {
-                Serial.println("\n\n_____________________________________________________\n\nAll tasks completed successfully. Resetting flags...\n_____________________________________________________\n\n");
-                statusUpdated = false;
-                cameraDeployed = false;
-                cameraDeployedFirebase = false;
-                locationObtained = false;
-                locationUpdated = false;
-                imageUploaded = false;
-                cameraRetracted = false;
-                syncStarted = false;
-                updatedOnce = true;
-                Serial.println("Flags reset complete.");
+            if (!logsWritten){
+              writeLogs();
+            }
+
+            if (cameraDeployed && cameraDeployedFirebase && locationObtained && locationUpdated && cameraRetracted && statusUpdated && imageUploaded && logsWritten) {
+              updateComplete = true;
+            }
+
+            if(updateComplete){
+              resetUpdateFlags();
             }
         }
     }
@@ -621,20 +754,4 @@ void loop() {
       updateLocationToFirebase();
       lastLocationUpdateMillis = millis();
     }
-    */
-
-   //Serial.printf("success: %s\n",  ? "done":"failed");
-   //Firebase.RTDB.setInt(&fbdoLogId, LOG_ID_PATH, 0);
-   //firebaseWriteInt(fbdoLogId, LOG_ID_PATH, logId);
-   //firebaseReadInt(fbdoLogId, LOG_ID_PATH, logId);
-   writeLogs(logId, eepromLatitude, eepromLongitude, isActive);
-
-
-
-
-
-
-   
-
-   delay(300000);
 }
