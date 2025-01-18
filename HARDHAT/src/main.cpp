@@ -10,8 +10,8 @@
 #include "soc/rtc_cntl_reg.h"
 #include <EEPROM.h>
 
-const char* wifiSsid = "Smart_Bro_E4D77";
-const char* wifiPassword = "smartbro";
+const char* wifiSsid = "Smart_Bro_E4063";
+const char* wifiPassword = "SmartBro090801";
 
 
 // Firebase Credentials //                                                                                                      //
@@ -36,6 +36,8 @@ const char* wifiPassword = "smartbro";
   #define LOC_LATITUDE_PATH "/hardHats/hardHat1/locLatitude"            // 8 Path to store the latitude of hard hat 1                             //
   #define LOC_LONGITUDE_PATH "/hardHats/hardHat1/locLongitude"          // 9 Path to store the longitude of hard hat 1                            //
   #define IS_ACTIVE_PATH "/hardHats/hardHat1/isActive"                  // 10 Path to store status of hard hat 1
+  #define LOG_ID_PATH "/hardHats/hardHat1/logId"                        // 10 Path to store status of hard hat 1
+  #define HARD_HAT_ID 1                        // 10 Path to store status of hard hat 1
 #elif HARDHAT == 2                                                      //                                                                        //
   #define USER_EMAIL "hardhat2@smarthardhat.com"                        // 1 Define the user email for hard hat 2                                 //
   #define USER_PASSWORD "hardhat2@smarthardhat.com"                     // 2 Define the user password for hard hat 2                              //
@@ -47,6 +49,8 @@ const char* wifiPassword = "smartbro";
   #define LOC_LATITUDE_PATH "/hardHats/hardHat2/locLatitude"            // 8 Path to store the latitude of hard hat 2                             //
   #define LOC_LONGITUDE_PATH "/hardHats/hardHat2/locLongitude"          // 9 Path to store the longitude of hard hat 2                            //
   #define IS_ACTIVE_PATH "/hardHats/hardHat2/isActive"                  // 10 Path to store status of hard hat 2 
+  #define LOG_ID_PATH "/hardHats/hardHat2/logId"
+  #define HARD_HAT_ID 2  
 #endif     
 
 #define eepromSize 256
@@ -71,7 +75,7 @@ int servoPulse = 10; // dictates speed of servo movement, higher value lower spe
 bool updatedOnce = false;
 unsigned long ellapsed = 0;
 unsigned long lastLocationUpdateMillis = 0;
-unsigned long locationUpdateInterval = 15 * 60000; //DITO BABAGUHIN TIME YUNG 15 PAPALITAN LANG NG ILANG MINUTES
+unsigned long locationUpdateInterval = 5 * 60000; //DITO BABAGUHIN TIME YUNG 15 PAPALITAN LANG NG ILANG MINUTES
 
 // Location saved in EEPROM
 double eepromLatitude = 14.198757;    
@@ -93,11 +97,15 @@ bool isRequestingImage = false;
 
 bool syncStarted = false;
 bool beeping = false;
+int logId = 1;
 
 TinyGPSPlus gps;
 FirebaseAuth firebaseAuth;
 FirebaseConfig firebaseConfig;
 FirebaseData fbdo, fbdoLocLatitude, fbdoLocLongitude, fbdoIsRequestingImageWrite, fbdoIsRequestingImageRead, fbdoIsServoDeployedRead, fbdoIsServoDeployedWrite, fbdoIsActive;
+
+//UPDATE CREATED NEW FBDOS
+FirebaseData fbdoLogLatitude, fbdoLogLongitude, fbdoLogStatus, fbdoLogId, fbdoLogTimestamp, fbdoHardHatId;
 
 Servo servoRight, servoLeft;
 
@@ -307,6 +315,29 @@ bool firebaseReadBool(FirebaseData &_fbdo, const char *_path, bool &_boolData) {
   return true;
 }
 
+bool firebaseReadInt(FirebaseData &_fbdo, const char *_path, int &_intData) {
+  if (!firebaseReady()) {
+    return false; // Check if Firebase is ready
+  } else {
+    if (!Firebase.RTDB.getInt(&_fbdo, _path)) {
+      // Log an error if the read operation fails
+      Serial.printf("FIREBASE: Read failed due to %s", _fbdo.errorReason().c_str());
+      return false;
+    } else {
+      // Verify the data type is integer
+      if (_fbdo.dataType() == "int") {
+        _intData = _fbdo.intData(); // Retrieve the integer data
+        Serial.printf("FIREBASE: Successful read from: %s | Value: %d | ", _path, _intData);
+      } else {
+        // Handle unexpected data type
+        Serial.printf("FIREBASE: Unexpected data type. Please check database path: %s | Expected Data Type: Integer \t", _path);
+        return false;
+      }
+    }
+  }
+  return true; // Indicate successful operation
+}
+
 // Function to write bool data to Firebase
 bool firebaseWriteBool(FirebaseData &_fbdo, const char *_path, bool _data) {
     bool _writeSuccess = false;
@@ -341,6 +372,45 @@ bool firebaseWriteFloat(FirebaseData &_fbdo, const char *_path, double _data) {
   }
   return _writeSuccess;
 }
+
+// Function to write integer data to Firebase
+bool firebaseWriteInt(FirebaseData &_fbdo, const char *_path, int _data) {
+  bool _writeSuccess = false;
+  // Print debug message with the data and path being written to Firebase
+  Serial.printf("FIREBASE: Writing %d to %s -> RESULT: ", _data, _path);
+
+  // Attempt to write the data to the specified Firebase path
+  if (!Firebase.RTDB.setInt(&_fbdo, _path, _data)) {
+    // Print failure message with error reason if writing fails
+    Serial.printf("FAILED! \t\t\t Error: %s", _fbdo.errorReason().c_str());
+    _writeSuccess = false;
+  } else {
+    // Print success message if writing is successful
+    Serial.printf("SUCCESS!\n");
+    _writeSuccess = true;
+  }
+  return _writeSuccess;
+}
+
+// Function to write a timestamp to Firebase
+bool firebaseWriteTimestamp(FirebaseData &_fbdo, const char *_path) {
+  bool _writeSuccess = false;
+  // Print debug message with the path being written to Firebase
+  Serial.printf("FIREBASE: Writing timestamp to %s -> RESULT: ", _path);
+
+  // Attempt to write the timestamp to the specified Firebase path
+  if (!Firebase.RTDB.setTimestamp(&_fbdo, _path)) {
+    // Print failure message with error reason if writing fails
+    Serial.printf("FAILED! \t\t\t Error: %s", _fbdo.errorReason().c_str());
+    _writeSuccess = false;
+  } else {
+    // Print success message if writing is successful
+    Serial.printf("SUCCESS!\n");
+    _writeSuccess = true;
+  }
+  return _writeSuccess;
+}
+
 
 void setupWifi(){
     WiFi.mode(WIFI_STA);
@@ -393,16 +463,64 @@ void setupGps (){
   readFromEeprom();
 }
 
+// Function to create a custom path string
+String logPath(int input, String key) {
+  char buffer[50];
+  snprintf(buffer, sizeof(buffer), "logs/%d/%s", input, key);
+  return String(buffer);
+}
+
+
+void writeLogs(int _logId, float _lat, float _long, bool _stat) {
+  
+  firebaseReadInt(fbdoLogId, LOG_ID_PATH, logId);
+  logId++;
+
+  // Writing log ID
+  if (!firebaseWriteInt(fbdoLogId, logPath(_logId, "logId").c_str(), _logId)) {
+    Serial.println("Failed to write logId.");
+  }
+
+  // Writing hard hat ID (assuming HARD_HAT_ID is a constant or defined variable)
+  if (!firebaseWriteInt(fbdoHardHatId, logPath(_logId, "hardHatId").c_str(), HARD_HAT_ID)) {
+    Serial.println("Failed to write hardHatId.");
+  }
+
+  // Writing latitude
+  if (!firebaseWriteFloat(fbdoLogLatitude, logPath(_logId, "latitude").c_str(), _lat)) {
+    Serial.println("Failed to write latitude.");
+  }
+
+  // Writing longitude
+  if (!firebaseWriteFloat(fbdoLogLongitude, logPath(_logId, "longitude").c_str(), _long)) {
+    Serial.println("Failed to write longitude.");
+  }
+
+  // Writing status
+  if (!firebaseWriteBool(fbdoLogStatus, logPath(_logId, "status").c_str(), _stat)) {
+    Serial.println("Failed to write status.");
+  }
+
+  // Writing timestamp
+  if (!firebaseWriteTimestamp(fbdoLogTimestamp, logPath(_logId, "timestamp").c_str())) {
+    Serial.println("Failed to write timestamp.");
+  }
+
+  firebaseWriteInt(fbdoLogId, LOG_ID_PATH, logId);
+}
+
 
 void setup() {
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
     Serial.begin(115200); //SERIAL MONITOR
     Serial2.begin(9600);  //GPS MODULE
+    //writeDefaultToEeprom();
     setupGps();           //
     setupWifi();          //
     setupFirebase();      //
     setupServo();         //
     pinMode(buzzerPin, OUTPUT); //set buzzer pin as output
+    
     
 
     updateStatus(isActive); // write inactive to firebase
@@ -412,6 +530,7 @@ void loop() {
     
     checkWifi(); //check if connected to wifi network, if not automatically reconnect.
 
+    /*
     if (!syncStarted){
         isActive = isWorn(capacitiveThreshold); // check if hardhat is worn using capacitive touch sensor
         if (isActive){
@@ -502,4 +621,20 @@ void loop() {
       updateLocationToFirebase();
       lastLocationUpdateMillis = millis();
     }
+    */
+
+   //Serial.printf("success: %s\n",  ? "done":"failed");
+   //Firebase.RTDB.setInt(&fbdoLogId, LOG_ID_PATH, 0);
+   //firebaseWriteInt(fbdoLogId, LOG_ID_PATH, logId);
+   //firebaseReadInt(fbdoLogId, LOG_ID_PATH, logId);
+   writeLogs(logId, eepromLatitude, eepromLongitude, isActive);
+
+
+
+
+
+
+   
+
+   delay(300000);
 }
