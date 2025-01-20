@@ -36,7 +36,7 @@ const char* wifiPassword = "SmartBro090801";
   #define LOC_LATITUDE_PATH "/hardHats/hardHat1/locLatitude"            // 8 Path to store the latitude of hard hat 1                             //
   #define LOC_LONGITUDE_PATH "/hardHats/hardHat1/locLongitude"          // 9 Path to store the longitude of hard hat 1                            //
   #define IS_ACTIVE_PATH "/hardHats/hardHat1/isActive"                  // 10 Path to store status of hard hat 1
-  #define LOG_ID_PATH "/hardHats/hardHat1/logId"                        // 10 Path to store status of hard hat 1
+  #define LOG_ID_PATH "/logs/logId"                        // 10 Path to store status of hard hat 1
   #define HARD_HAT_ID 1                        // 10 Path to store status of hard hat 1
 #elif HARDHAT == 2                                                      //                                                                        //
   #define USER_EMAIL "hardhat2@smarthardhat.com"                        // 1 Define the user email for hard hat 2                                 //
@@ -49,7 +49,7 @@ const char* wifiPassword = "SmartBro090801";
   #define LOC_LATITUDE_PATH "/hardHats/hardHat2/locLatitude"            // 8 Path to store the latitude of hard hat 2                             //
   #define LOC_LONGITUDE_PATH "/hardHats/hardHat2/locLongitude"          // 9 Path to store the longitude of hard hat 2                            //
   #define IS_ACTIVE_PATH "/hardHats/hardHat2/isActive"                  // 10 Path to store status of hard hat 2 
-  #define LOG_ID_PATH "/hardHats/hardHat2/logId"
+  #define LOG_ID_PATH "/logs/logId"
   #define HARD_HAT_ID 2  
 #endif     
 
@@ -82,13 +82,14 @@ bool logIdIncremented = false;
 bool logsWritten = false;
 bool logComplete = false;
 bool loggedInactive = false;
+bool loggedRegular = false;
 
 int servoPulse = 10; // dictates speed of servo movement, higher value lower speed
 
 bool updatedOnce = false;
 unsigned long ellapsed = 0;
 unsigned long lastLocationUpdateMillis = 0;
-unsigned long locationUpdateInterval = 5 * 60000; //DITO BABAGUHIN TIME YUNG 15 PAPALITAN LANG NG ILANG MINUTES
+unsigned long locationUpdateInterval = 1 * 60000; //DITO BABAGUHIN TIME YUNG 15 PAPALITAN LANG NG ILANG MINUTES
 
 // Location saved in EEPROM
 double eepromLatitude = 14.198757;    
@@ -568,9 +569,10 @@ void resetLoggedFlags() {
   loggedTimestamp = false;
   logIdIncremented = false;
   logsWritten = false;
+  lastLocationUpdateMillis = millis();
 
   logComplete = false;
-
+  loggedRegular = false;
   Serial.println("All logged flags have been reset to false.");
 }
 
@@ -641,6 +643,18 @@ void firebaseLogInactive(){
   }
 }
 
+void firebaseLogRegular(){
+  Serial.println("Regular logging initiated");
+  if(!loggedRegular){
+    writeLogs();
+
+    if (logsWritten){
+      loggedRegular = true;
+      resetLoggedFlags();
+    }
+  }
+}
+
 void setup() {
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
     Serial.begin(115200); //SERIAL MONITOR
@@ -662,6 +676,7 @@ void loop() {
     
     if (!syncStarted){
         isActive = isWorn(capacitiveThreshold); // check if hardhat is worn using capacitive touch sensor
+        Serial.printf("Logged regular: %s\n", loggedRegular ? "TRUE":"FALSE");
         if (isActive){
             if (!updatedOnce){
                 Serial.println ("\n\n________________________________________\n\nHard hat is worn. Initiate sync now.\n________________________________________\n\n");
@@ -746,10 +761,13 @@ void loop() {
     }
 
     ellapsed = (millis () - lastLocationUpdateMillis);
+    float elapsedMinutes = ellapsed / 60000.0;
     bool timeToUpdateLocation = ellapsed > locationUpdateInterval;
-    if (isActive &&  timeToUpdateLocation) {
+    Serial.printf("Elapsed Time: %.2f minutes | Time to update location: %s\n", elapsedMinutes,timeToUpdateLocation? "TRUE":"FALSE");
+    if (isActive &&  timeToUpdateLocation && !logComplete) {
       readGps();
+      firebaseLogRegular();
       updateLocationToFirebase();
-      lastLocationUpdateMillis = millis();
+      
     }
 }
